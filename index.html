@@ -3,61 +3,47 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>AI 智能視覺辨識 (TensorFlow.js)</title>
+    <title>AI 視覺辨識 (相機修復版)</title>
     
-    <!-- 引入 TensorFlow.js 核心與模型 -->
+    <!-- 引入 TensorFlow.js -->
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.11.0/dist/tf.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.2/dist/coco-ssd.min.js"></script>
 
     <style>
-        /* --- 基礎設定 --- */
         body {
             margin: 0;
-            padding: 0;
             background-color: #000;
-            font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-            overflow: hidden; /* 禁止捲動 */
-            width: 100vw;
+            font-family: sans-serif;
+            overflow: hidden;
+            color: white;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
             height: 100vh;
-            color: #fff;
         }
 
-        /* --- 視訊層 (底層) --- */
-        #video-container {
+        /* 視訊層 */
+        #cam-container {
+            position: relative;
+            width: 100%;
+            height: 100%;
+            background: #111;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        video, canvas {
             position: absolute;
-            top: 0;
-            left: 0;
             width: 100%;
             height: 100%;
-            z-index: 1;
-            background: #000;
+            object-fit: cover;
         }
 
-        video {
-            width: 100%;
-            height: 100%;
-            object-fit: cover; /* 讓畫面填滿螢幕 */
-            display: block;
-        }
-
-        /* --- 畫布層 (繪製框框用) --- */
-        canvas {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            z-index: 2;
-            pointer-events: none; /* 讓點擊穿透到下方 */
-        }
-
-        /* --- UI 介面層 (最上層) --- */
+        /* UI 層 */
         #ui-layer {
             position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
+            top: 0; left: 0; width: 100%; height: 100%;
             z-index: 10;
             pointer-events: none;
             display: flex;
@@ -65,389 +51,211 @@
             justify-content: space-between;
         }
 
-        /* 頂部資訊列 */
-        .top-bar {
-            background: linear-gradient(180deg, rgba(0,0,0,0.8) 0%, rgba(0,0,0,0) 100%);
+        .header {
+            background: rgba(0,0,0,0.6);
+            padding: 15px;
+            text-align: center;
+            font-weight: bold;
+            color: #00ffcc;
+            pointer-events: auto;
+        }
+
+        .footer {
             padding: 20px;
             display: flex;
-            justify-content: space-between;
-            align-items: center;
-            pointer-events: auto;
-        }
-
-        .status-badge {
-            background: rgba(0, 255, 204, 0.2);
-            border: 1px solid #00ffcc;
-            color: #00ffcc;
-            padding: 5px 12px;
-            border-radius: 4px;
-            font-size: 12px;
-            font-weight: bold;
-            letter-spacing: 1px;
-            text-transform: uppercase;
-        }
-
-        .object-count {
-            font-size: 14px;
-            color: #fff;
-            text-shadow: 0 0 5px rgba(0,0,0,0.5);
-        }
-
-        /* 底部控制列 */
-        .bottom-controls {
-            padding: 30px;
-            display: flex;
             justify-content: center;
-            gap: 20px;
             pointer-events: auto;
-            background: linear-gradient(0deg, rgba(0,0,0,0.8) 0%, rgba(0,0,0,0) 100%);
+            background: linear-gradient(transparent, rgba(0,0,0,0.8));
         }
 
-        /* 按鈕樣式 */
+        /* 啟動按鈕 */
         .btn {
-            background: rgba(255, 255, 255, 0.15);
-            backdrop-filter: blur(10px);
-            border: 1px solid rgba(255, 255, 255, 0.3);
-            color: white;
-            padding: 12px 24px;
-            border-radius: 30px;
-            font-size: 14px;
-            cursor: pointer;
-            transition: all 0.2s ease;
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            outline: none;
-            -webkit-tap-highlight-color: transparent;
-        }
-
-        .btn:active {
-            transform: scale(0.95);
-            background: rgba(255, 255, 255, 0.3);
-        }
-
-        .btn-primary {
             background: #007aff;
-            border-color: #007aff;
+            color: white;
+            border: none;
+            padding: 12px 30px;
+            border-radius: 25px;
+            font-size: 16px;
+            cursor: pointer;
+            box-shadow: 0 4px 10px rgba(0,122,255,0.3);
+            pointer-events: auto;
         }
 
-        /* --- 載入畫面 --- */
-        #loading-screen {
+        .btn:disabled { background: #555; color: #aaa; }
+
+        /* 錯誤訊息框 */
+        #error-msg {
+            display: none;
             position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: #000;
-            z-index: 20;
-            display: flex;
-            flex-direction: column;
-            justify-content: center;
-            align-items: center;
-            transition: opacity 0.5s;
-        }
-
-        .loader {
-            width: 50px;
-            height: 50px;
-            border: 3px solid rgba(255,255,255,0.1);
-            border-top: 3px solid #00ffcc;
-            border-radius: 50%;
-            animation: spin 1s linear infinite;
-            margin-bottom: 20px;
-        }
-
-        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-
-        .loading-text {
-            color: #aaa;
-            font-size: 14px;
-            margin-top: 10px;
+            top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(255, 59, 48, 0.9);
+            padding: 20px;
+            border-radius: 10px;
             text-align: center;
-            line-height: 1.5;
+            max-width: 80%;
+            z-index: 50;
         }
-
-        #start-btn {
-            margin-top: 30px;
-            padding: 15px 40px;
-            font-size: 18px;
-            display: none; /* 載入完成才顯示 */
-        }
-
     </style>
 </head>
 <body>
 
-    <!-- 視訊與畫布 -->
-    <div id="video-container">
+    <div id="cam-container">
+        <!-- 關鍵：playsinline 讓 iOS 不要全螢幕播放 -->
         <video id="webcam" playsinline muted autoplay></video>
         <canvas id="canvas"></canvas>
     </div>
 
-    <!-- UI 介面 -->
     <div id="ui-layer">
-        <div class="top-bar">
-            <div class="status-badge" id="status-text">AI 系統待機</div>
-            <div class="object-count" id="fps-display">物件: 0</div>
-        </div>
+        <div class="header" id="status-text">請點擊下方按鈕啟動</div>
+        
+        <!-- 錯誤訊息顯示區 -->
+        <div id="error-msg"></div>
 
-        <div class="bottom-controls" id="controls" style="display:none;">
-            <button class="btn" onclick="togglePause()" id="btn-pause">
-                <span>⏸</span> 暫停
-            </button>
-            <button class="btn" onclick="switchCamera()" id="btn-switch">
-                <span>📷</span> 翻轉鏡頭
-            </button>
+        <div class="footer">
+            <button class="btn" id="btn-action" onclick="initSystem()">載入模型並開啟相機</button>
         </div>
-    </div>
-
-    <!-- 載入畫面 -->
-    <div id="loading-screen">
-        <div class="loader" id="loader"></div>
-        <h2 style="font-weight: 300; letter-spacing: 2px;">AI VISION</h2>
-        <p class="loading-text" id="loading-msg">正在初始化類神經網路...<br>(初次載入約需 10-20 秒)</p>
-        <button class="btn btn-primary" id="start-btn" onclick="startApp()">啟動系統</button>
     </div>
 
     <script>
-        // --- 變數宣告 ---
         const video = document.getElementById('webcam');
         const canvas = document.getElementById('canvas');
         const ctx = canvas.getContext('2d');
-        const loadingMsg = document.getElementById('loading-msg');
-        const loader = document.getElementById('loader');
-        const startBtn = document.getElementById('start-btn');
         const statusText = document.getElementById('status-text');
-        const fpsDisplay = document.getElementById('fps-display');
-        const controls = document.getElementById('controls');
-        
+        const btnAction = document.getElementById('btn-action');
+        const errorBox = document.getElementById('error-msg');
+
         let model = null;
         let isDetecting = false;
-        let isPaused = false;
-        let currentStream = null;
-        let facingMode = 'environment'; // 預設後鏡頭
 
-        // --- 1. 初始化模型 ---
-        async function loadModel() {
+        // 1. 系統初始化入口
+        async function initSystem() {
+            btnAction.disabled = true;
+            btnAction.innerText = "正在載入 AI 模型...";
+            
             try {
-                // 載入 COCO-SSD 模型
-                // base: 'mobilenet_v2' 速度較快，適合手機
-                model = await cocoSsd.load({ base: 'mobilenet_v2' });
+                // A. 載入模型
+                if (!model) {
+                    statusText.innerText = "下載 AI 模型中 (約 2-5MB)...";
+                    // 使用 lite_mobilenet_v2 速度更快
+                    model = await cocoSsd.load({ base: 'lite_mobilenet_v2' });
+                }
+
+                // B. 啟動相機 (這是您要求的「之前的方法」)
+                statusText.innerText = "正在請求相機權限...";
+                await startCamera();
+
+                // C. 開始偵測
+                btnAction.style.display = 'none'; // 成功後隱藏按鈕
+                statusText.innerText = "AI 辨識中";
                 
-                // 模型載入完成
-                loader.style.display = 'none';
-                loadingMsg.innerHTML = "模型已就緒<br>請允許相機權限以開始";
-                startBtn.style.display = 'block';
+                resizeCanvas();
+                detectFrame();
+                
             } catch (err) {
                 console.error(err);
-                loadingMsg.innerHTML = "載入失敗<br>請檢查網路連線";
-                loadingMsg.style.color = "#ff3b30";
+                showError("啟動失敗：" + err.message + "<br><br>提示：請確認網址是 https 或 localhost，直接開啟檔案通常會被瀏覽器封鎖相機。");
+                btnAction.disabled = false;
+                btnAction.innerText = "重試";
             }
         }
 
-        // --- 2. 啟動應用程式 ---
-        async function startApp() {
-            document.getElementById('loading-screen').style.opacity = '0';
-            setTimeout(() => {
-                document.getElementById('loading-screen').style.display = 'none';
-            }, 500);
-
-            await setupCamera();
-            controls.style.display = 'flex';
-        }
-
-        // --- 3. 設定相機 ---
-        async function setupCamera() {
-            if (currentStream) {
-                currentStream.getTracks().forEach(track => track.stop());
-            }
-
+        // 2. 啟動相機 (使用最穩定的 getUserMedia 方法)
+        async function startCamera() {
             const constraints = {
                 audio: false,
                 video: {
-                    facingMode: facingMode,
-                    width: { ideal: 1280 },
-                    height: { ideal: 720 }
+                    // 優先使用後鏡頭，若失敗則使用預設
+                    facingMode: 'environment'
                 }
             };
 
-            try {
-                currentStream = await navigator.mediaDevices.getUserMedia(constraints);
-                video.srcObject = currentStream;
+            // 這裡使用了標準的 Promise 處理方式
+            const stream = await navigator.mediaDevices.getUserMedia(constraints);
+            video.srcObject = stream;
 
-                return new Promise((resolve) => {
-                    video.onloadedmetadata = () => {
-                        resizeCanvas();
-                        if (!isDetecting) {
-                            detectFrame();
-                        }
-                        statusText.innerText = "偵測中";
-                        resolve();
-                    };
-                });
-            } catch (err) {
-                alert("無法開啟相機: " + err.message);
-            }
+            return new Promise((resolve) => {
+                video.onloadedmetadata = () => {
+                    video.play();
+                    resolve();
+                };
+            });
         }
 
-        // --- 4. 調整 Canvas 大小 ---
-        // 這是確保繪圖位置正確的關鍵
+        // 3. AI 偵測迴圈
+        async function detectFrame() {
+            if (!model) return;
+
+            // 偵測物件
+            const predictions = await model.detect(video);
+            
+            // 繪圖
+            renderPredictions(predictions);
+
+            // 持續執行
+            requestAnimationFrame(detectFrame);
+        }
+
+        // 4. 繪製結果 (修正座標偏移問題)
+        function renderPredictions(predictions) {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // 計算比例，確保框框畫在正確位置
+            // 因為 CSS object-fit: cover 會裁切影片，我們需要算出裁切後的偏移量
+            const videoRatio = video.videoWidth / video.videoHeight;
+            const screenRatio = canvas.width / canvas.height;
+            
+            let scale, offsetX, offsetY;
+
+            if (screenRatio > videoRatio) {
+                // 螢幕比較寬 -> 以寬度為準，上下裁切
+                scale = canvas.width / video.videoWidth;
+                offsetX = 0;
+                offsetY = (canvas.height - (video.videoHeight * scale)) / 2;
+            } else {
+                // 螢幕比較高 -> 以高度為準，左右裁切
+                scale = canvas.height / video.videoHeight;
+                offsetX = (canvas.width - (video.videoWidth * scale)) / 2;
+                offsetY = 0;
+            }
+
+            predictions.forEach(prediction => {
+                const [x, y, width, height] = prediction.bbox;
+                
+                // 轉換座標
+                const drawX = x * scale + offsetX;
+                const drawY = y * scale + offsetY;
+                const drawW = width * scale;
+                const drawH = height * scale;
+
+                // 畫框
+                ctx.strokeStyle = "#00FF00";
+                ctx.lineWidth = 4;
+                ctx.strokeRect(drawX, drawY, drawW, drawH);
+
+                // 畫文字標籤
+                ctx.fillStyle = "#00FF00";
+                ctx.font = "bold 18px Arial";
+                ctx.fillText(
+                    `${prediction.class} (${Math.round(prediction.score * 100)}%)`,
+                    drawX, 
+                    drawY > 20 ? drawY - 10 : drawY + 20 // 避免文字跑出畫面頂部
+                );
+            });
+        }
+
+        // 5. 處理視窗縮放
         function resizeCanvas() {
             canvas.width = window.innerWidth;
             canvas.height = window.innerHeight;
         }
-
         window.addEventListener('resize', resizeCanvas);
 
-        // --- 5. 翻轉鏡頭 ---
-        async function switchCamera() {
-            facingMode = (facingMode === 'user') ? 'environment' : 'user';
-            statusText.innerText = "切換鏡頭...";
-            await setupCamera();
-            statusText.innerText = "偵測中";
+        // 顯示錯誤訊息的輔助函式
+        function showError(msg) {
+            errorBox.innerHTML = msg;
+            errorBox.style.display = 'block';
         }
-
-        // --- 6. 暫停/繼續 ---
-        function togglePause() {
-            const btn = document.getElementById('btn-pause');
-            if (isPaused) {
-                isPaused = false;
-                video.play();
-                detectFrame();
-                btn.innerHTML = '<span>⏸</span> 暫停';
-                statusText.innerText = "偵測中";
-            } else {
-                isPaused = true;
-                video.pause();
-                btn.innerHTML = '<span>▶</span> 繼續';
-                statusText.innerText = "已暫停";
-                statusText.style.color = "yellow";
-                statusText.style.borderColor = "yellow";
-            }
-        }
-
-        // --- 7. 核心偵測迴圈 ---
-        async function detectFrame() {
-            if (isPaused) return;
-
-            isDetecting = true;
-
-            // 進行預測
-            const predictions = await model.detect(video);
-
-            // 清除畫布
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-            // 繪製結果
-            drawPredictions(predictions);
-
-            // 更新 UI 計數
-            fpsDisplay.innerText = `物件數: ${predictions.length}`;
-            statusText.style.color = "#00ffcc";
-            statusText.style.borderColor = "#00ffcc";
-
-            // 下一幀
-            requestAnimationFrame(detectFrame);
-        }
-
-        // --- 8. 繪製精美的框框 ---
-        function drawPredictions(predictions) {
-            // 計算縮放比例 (因為 video 是 object-fit: cover，需要計算實際顯示區域)
-            const videoRatio = video.videoWidth / video.videoHeight;
-            const screenRatio = canvas.width / canvas.height;
-            
-            let renderWidth, renderHeight, offsetX, offsetY;
-
-            if (screenRatio > videoRatio) {
-                // 螢幕比較寬，以寬度為基準
-                renderWidth = canvas.width;
-                renderHeight = canvas.width / videoRatio;
-                offsetX = 0;
-                offsetY = (canvas.height - renderHeight) / 2;
-            } else {
-                // 螢幕比較高，以高度為基準
-                renderHeight = canvas.height;
-                renderWidth = canvas.height * videoRatio;
-                offsetX = (canvas.width - renderWidth) / 2;
-                offsetY = 0;
-            }
-
-            const scaleX = renderWidth / video.videoWidth;
-            const scaleY = renderHeight / video.videoHeight;
-
-            predictions.forEach(prediction => {
-                const [x, y, width, height] = prediction.bbox;
-                const className = prediction.class;
-                const score = Math.round(prediction.score * 100);
-
-                // 轉換座標到 Canvas
-                const drawX = x * scaleX + offsetX;
-                const drawY = y * scaleY + offsetY;
-                const drawW = width * scaleX;
-                const drawH = height * scaleY;
-
-                // 設定顏色 (依據不同物件可設定不同色，這裡統用科幻青色)
-                const color = '#00ffcc';
-
-                // 畫框框 (四個角角風格)
-                drawFancyBox(ctx, drawX, drawY, drawW, drawH, color);
-
-                // 畫文字標籤背景
-                ctx.fillStyle = color;
-                ctx.font = 'bold 16px "Segoe UI", sans-serif';
-                const text = `${className} ${score}%`;
-                const textWidth = ctx.measureText(text).width;
-                
-                ctx.fillRect(drawX, drawY - 25, textWidth + 20, 25);
-
-                // 畫文字
-                ctx.fillStyle = '#000';
-                ctx.fillText(text, drawX + 10, drawY - 7);
-            });
-        }
-
-        // 輔助函式：畫出只有四個角的科幻框框
-        function drawFancyBox(ctx, x, y, w, h, color) {
-            ctx.strokeStyle = color;
-            ctx.lineWidth = 3;
-            ctx.beginPath();
-            
-            const lineLen = Math.min(w, h) * 0.2; // 角落線條長度
-
-            // 左上
-            ctx.moveTo(x, y + lineLen);
-            ctx.lineTo(x, y);
-            ctx.lineTo(x + lineLen, y);
-
-            // 右上
-            ctx.moveTo(x + w - lineLen, y);
-            ctx.lineTo(x + w, y);
-            ctx.lineTo(x + w, y + lineLen);
-
-            // 右下
-            ctx.moveTo(x + w, y + h - lineLen);
-            ctx.lineTo(x + w, y + h);
-            ctx.lineTo(x + w - lineLen, y + h);
-
-            // 左下
-            ctx.moveTo(x + lineLen, y + h);
-            ctx.lineTo(x, y + h);
-            ctx.lineTo(x, y + h - lineLen);
-
-            ctx.stroke();
-
-            // 加上半透明填充增加識別度
-            ctx.fillStyle = color.replace(')', ', 0.1)').replace('rgb', 'rgba'); // 簡單的 hack
-            if(color.startsWith('#')) {
-                // 如果是 hex，使用固定透明度
-                ctx.fillStyle = "rgba(0, 255, 204, 0.1)"; 
-            }
-            ctx.fillRect(x, y, w, h);
-        }
-
-        // 開始載入程序
-        window.onload = loadModel;
-
     </script>
 </body>
 </html>
