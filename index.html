@@ -3,19 +3,21 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>AI 視覺辨識 (相機修復版)</title>
+    <title>AI Face Trainer - Monkey Edition</title>
     
-    <!-- 引入 TensorFlow.js -->
+    <!-- 引入 TensorFlow.js 核心與必要的模型 -->
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.11.0/dist/tf.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.2/dist/coco-ssd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/mobilenet@2.1.0/dist/mobilenet.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/knn-classifier@1.2.2/dist/knn-classifier.min.js"></script>
 
     <style>
+        /* --- 充滿科技感的暗黑介面 --- */
         body {
             margin: 0;
-            background-color: #000;
-            font-family: sans-serif;
+            background-color: #0d0d0d;
+            font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
             overflow: hidden;
-            color: white;
+            color: #fff;
             display: flex;
             flex-direction: column;
             align-items: center;
@@ -26,21 +28,33 @@
         #cam-container {
             position: relative;
             width: 100%;
-            height: 100%;
+            flex: 1; /* 佔滿剩餘空間 */
             background: #111;
+            overflow: hidden;
             display: flex;
             justify-content: center;
             align-items: center;
         }
 
-        video, canvas {
-            position: absolute;
-            width: 100%;
-            height: 100%;
+        video {
+            min-width: 100%;
+            min-height: 100%;
             object-fit: cover;
         }
 
-        /* UI 層 */
+        /* 掃描線特效 */
+        #scan-line {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 2px;
+            background: rgba(0, 255, 204, 0.5);
+            box-shadow: 0 0 10px #00ffcc;
+            animation: scan 3s linear infinite;
+            pointer-events: none;
+            display: none; /* 訓練模式開啟 */
+        }
+        @keyframes scan { 0% {top: 0;} 100% {top: 100%;} }
+
+        /* HUD 介面層 */
         #ui-layer {
             position: absolute;
             top: 0; left: 0; width: 100%; height: 100%;
@@ -51,129 +65,198 @@
             justify-content: space-between;
         }
 
-        .header {
-            background: rgba(0,0,0,0.6);
-            padding: 15px;
+        /* 頂部結果顯示 */
+        .top-hud {
+            padding: 20px;
             text-align: center;
-            font-weight: bold;
-            color: #00ffcc;
-            pointer-events: auto;
+            background: linear-gradient(180deg, rgba(0,0,0,0.8) 0%, transparent 100%);
         }
 
-        .footer {
+        #result-badge {
+            display: inline-block;
+            padding: 10px 25px;
+            font-size: 24px;
+            font-weight: 800;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            border: 2px solid #555;
+            background: rgba(0, 0, 0, 0.5);
+            color: #aaa;
+            border-radius: 4px;
+            transition: all 0.2s;
+            text-shadow: 0 0 10px rgba(0,0,0,0.5);
+        }
+
+        .confidence-bar {
+            width: 200px;
+            height: 4px;
+            background: #333;
+            margin: 10px auto;
+            border-radius: 2px;
+            overflow: hidden;
+        }
+        #confidence-level {
+            height: 100%;
+            width: 0%;
+            background: #00ffcc;
+            transition: width 0.1s;
+        }
+
+        /* 底部控制區 */
+        .controls-area {
             padding: 20px;
+            background: linear-gradient(0deg, rgba(0,0,0,0.9) 0%, transparent 100%);
+            pointer-events: auto;
             display: flex;
+            flex-direction: column;
+            gap: 15px;
+            align-items: center;
+        }
+
+        .btn-group {
+            display: flex;
+            gap: 15px;
+            width: 100%;
+            max-width: 500px;
             justify-content: center;
-            pointer-events: auto;
-            background: linear-gradient(transparent, rgba(0,0,0,0.8));
         }
 
-        /* 啟動按鈕 */
-        .btn {
-            background: #007aff;
-            color: white;
+        /* 訓練按鈕 */
+        .train-btn {
+            flex: 1;
+            padding: 20px 10px;
             border: none;
-            padding: 12px 30px;
-            border-radius: 25px;
+            border-radius: 12px;
             font-size: 16px;
+            font-weight: bold;
+            color: white;
             cursor: pointer;
-            box-shadow: 0 4px 10px rgba(0,122,255,0.3);
-            pointer-events: auto;
+            transition: transform 0.1s, filter 0.2s;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 5px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.3);
         }
 
-        .btn:disabled { background: #555; color: #aaa; }
+        .train-btn:active { transform: scale(0.95); }
+        .train-btn:disabled { opacity: 0.5; filter: grayscale(1); cursor: not-allowed; }
 
-        /* 錯誤訊息框 */
-        #error-msg {
-            display: none;
-            position: absolute;
-            top: 50%; left: 50%;
-            transform: translate(-50%, -50%);
-            background: rgba(255, 59, 48, 0.9);
-            padding: 20px;
+        .btn-monkey {
+            background: linear-gradient(135deg, #00c6ff, #0072ff);
+            border: 1px solid #00c6ff;
+        }
+        .btn-other {
+            background: linear-gradient(135deg, #ff512f, #dd2476);
+            border: 1px solid #ff512f;
+        }
+
+        .count-badge {
+            background: rgba(0,0,0,0.3);
+            padding: 2px 8px;
             border-radius: 10px;
-            text-align: center;
-            max-width: 80%;
-            z-index: 50;
+            font-size: 12px;
         }
+
+        /* 狀態文字 */
+        #status-text {
+            color: #888;
+            font-size: 14px;
+            margin-bottom: 5px;
+        }
+
     </style>
 </head>
 <body>
 
     <div id="cam-container">
-        <!-- 關鍵：playsinline 讓 iOS 不要全螢幕播放 -->
         <video id="webcam" playsinline muted autoplay></video>
-        <canvas id="canvas"></canvas>
+        <div id="scan-line"></div>
     </div>
 
     <div id="ui-layer">
-        <div class="header" id="status-text">請點擊下方按鈕啟動</div>
-        
-        <!-- 錯誤訊息顯示區 -->
-        <div id="error-msg"></div>
+        <div class="top-hud">
+            <div id="result-badge">WAITING...</div>
+            <div class="confidence-bar"><div id="confidence-level"></div></div>
+            <div id="conf-text" style="font-size:12px; color:#aaa;">信心度: 0%</div>
+        </div>
 
-        <div class="footer">
-            <button class="btn" id="btn-action" onclick="initSystem()">載入模型並開啟相機</button>
+        <div class="controls-area">
+            <div id="status-text">請先允許相機權限，然後開始教學</div>
+            
+            <div class="btn-group">
+                <!-- 按鈕 A：學習特定對象 -->
+                <button class="train-btn btn-monkey" id="btn-monkey" onclick="addExample('Monkey')">
+                    <span>Target: Monkey</span>
+                    <span class="count-badge" id="count-monkey">樣本: 0</span>
+                </button>
+
+                <!-- 按鈕 B：學習背景/其他人 -->
+                <button class="train-btn btn-other" id="btn-other" onclick="addExample('Stranger')">
+                    <span>Other / Background</span>
+                    <span class="count-badge" id="count-other">樣本: 0</span>
+                </button>
+            </div>
+            
+            <div style="font-size: 12px; color: #666; text-align: center; max-width: 400px;">
+                教學指南：<br>
+                1. 讓鏡頭看著目標的臉，長按 <span style="color:#00c6ff">藍色按鈕</span> 學習 "Monkey"。<br>
+                2. 移開鏡頭拍別處或別人，長按 <span style="color:#dd2476">紅色按鈕</span> 學習 "背景"。<br>
+                3. AI 就會開始即時分辨了！
+            </div>
         </div>
     </div>
 
     <script>
         const video = document.getElementById('webcam');
-        const canvas = document.getElementById('canvas');
-        const ctx = canvas.getContext('2d');
+        const resultBadge = document.getElementById('result-badge');
+        const confBar = document.getElementById('confidence-level');
+        const confText = document.getElementById('conf-text');
         const statusText = document.getElementById('status-text');
-        const btnAction = document.getElementById('btn-action');
-        const errorBox = document.getElementById('error-msg');
+        const scanLine = document.getElementById('scan-line');
 
-        let model = null;
-        let isDetecting = false;
+        // 計數器
+        let counts = { 'Monkey': 0, 'Stranger': 0 };
 
-        // 1. 系統初始化入口
-        async function initSystem() {
-            btnAction.disabled = true;
-            btnAction.innerText = "正在載入 AI 模型...";
+        // AI 變數
+        let classifier;
+        let mobilenetModule;
+        let isPredicting = false;
+
+        // 1. 初始化系統
+        async function init() {
+            statusText.innerText = "正在載入神經網路 (MobileNet)...";
             
             try {
-                // A. 載入模型
-                if (!model) {
-                    statusText.innerText = "下載 AI 模型中 (約 2-5MB)...";
-                    // 使用 lite_mobilenet_v2 速度更快
-                    model = await cocoSsd.load({ base: 'lite_mobilenet_v2' });
-                }
+                // 平行載入 KNN 分類器 與 MobileNet 模型
+                [classifier, mobilenetModule] = await Promise.all([
+                    knnClassifier.create(),
+                    mobilenet.load()
+                ]);
 
-                // B. 啟動相機 (這是您要求的「之前的方法」)
-                statusText.innerText = "正在請求相機權限...";
-                await startCamera();
+                statusText.innerText = "模型載入完成，啟動相機...";
+                await setupCamera();
+                
+                statusText.innerText = "系統就緒。請按住按鈕進行訓練。";
+                scanLine.style.display = "block"; // 開啟掃描特效
+                
+                // 開始預測迴圈
+                loop();
 
-                // C. 開始偵測
-                btnAction.style.display = 'none'; // 成功後隱藏按鈕
-                statusText.innerText = "AI 辨識中";
-                
-                resizeCanvas();
-                detectFrame();
-                
-            } catch (err) {
-                console.error(err);
-                showError("啟動失敗：" + err.message + "<br><br>提示：請確認網址是 https 或 localhost，直接開啟檔案通常會被瀏覽器封鎖相機。");
-                btnAction.disabled = false;
-                btnAction.innerText = "重試";
+            } catch (error) {
+                console.error(error);
+                statusText.innerText = "錯誤: 無法載入模型或相機";
+                alert("初始化失敗，請確保使用 HTTPS 或 Localhost，並允許相機權限。");
             }
         }
 
-        // 2. 啟動相機 (使用最穩定的 getUserMedia 方法)
-        async function startCamera() {
-            const constraints = {
-                audio: false,
-                video: {
-                    // 優先使用後鏡頭，若失敗則使用預設
-                    facingMode: 'environment'
-                }
-            };
-
-            // 這裡使用了標準的 Promise 處理方式
-            const stream = await navigator.mediaDevices.getUserMedia(constraints);
+        // 2. 設定相機
+        async function setupCamera() {
+            const stream = await navigator.mediaDevices.getUserMedia({
+                video: { facingMode: 'environment' }, // 預設後鏡頭
+                audio: false
+            });
             video.srcObject = stream;
-
             return new Promise((resolve) => {
                 video.onloadedmetadata = () => {
                     video.play();
@@ -182,80 +265,85 @@
             });
         }
 
-        // 3. AI 偵測迴圈
-        async function detectFrame() {
-            if (!model) return;
+        // 3. 加入訓練樣本 (核心功能)
+        function addExample(classId) {
+            if (!mobilenetModule || !classifier) return;
 
-            // 偵測物件
-            const predictions = await model.detect(video);
+            // 從 MobileNet 獲取影像特徵 (Activation)
+            const activation = mobilenetModule.infer(video, true);
             
-            // 繪圖
-            renderPredictions(predictions);
+            // 加到 KNN 分類器
+            classifier.addExample(activation, classId);
 
-            // 持續執行
-            requestAnimationFrame(detectFrame);
-        }
+            // 釋放記憶體 (TensorFlow.js 重要步驟)
+            activation.dispose();
 
-        // 4. 繪製結果 (修正座標偏移問題)
-        function renderPredictions(predictions) {
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-            // 計算比例，確保框框畫在正確位置
-            // 因為 CSS object-fit: cover 會裁切影片，我們需要算出裁切後的偏移量
-            const videoRatio = video.videoWidth / video.videoHeight;
-            const screenRatio = canvas.width / canvas.height;
-            
-            let scale, offsetX, offsetY;
-
-            if (screenRatio > videoRatio) {
-                // 螢幕比較寬 -> 以寬度為準，上下裁切
-                scale = canvas.width / video.videoWidth;
-                offsetX = 0;
-                offsetY = (canvas.height - (video.videoHeight * scale)) / 2;
+            // 更新 UI 計數
+            counts[classId]++;
+            if (classId === 'Monkey') {
+                document.getElementById('count-monkey').innerText = `樣本: ${counts[classId]}`;
             } else {
-                // 螢幕比較高 -> 以高度為準，左右裁切
-                scale = canvas.height / video.videoHeight;
-                offsetX = (canvas.width - (video.videoWidth * scale)) / 2;
-                offsetY = 0;
+                document.getElementById('count-other').innerText = `樣本: ${counts[classId]}`;
             }
 
-            predictions.forEach(prediction => {
-                const [x, y, width, height] = prediction.bbox;
+            // 給予視覺回饋
+            resultBadge.innerText = "LEARNING...";
+            resultBadge.style.borderColor = "#fff";
+            resultBadge.style.color = "#fff";
+        }
+
+        // 4. 預測迴圈
+        async function loop() {
+            if (classifier.getNumClasses() > 0) {
+                // 只有當有訓練樣本時才進行預測
                 
-                // 轉換座標
-                const drawX = x * scale + offsetX;
-                const drawY = y * scale + offsetY;
-                const drawW = width * scale;
-                const drawH = height * scale;
+                // 1. 取得當前影像特徵
+                const activation = mobilenetModule.infer(video, true);
+                
+                // 2. 讓 KNN 進行分類預測
+                try {
+                    const result = await classifier.predictClass(activation);
+                    
+                    // 3. 更新 UI
+                    updateUI(result);
+                } catch (e) {
+                    console.log("Prediction error", e);
+                }
+                
+                // 釋放記憶體
+                activation.dispose();
+            }
 
-                // 畫框
-                ctx.strokeStyle = "#00FF00";
-                ctx.lineWidth = 4;
-                ctx.strokeRect(drawX, drawY, drawW, drawH);
-
-                // 畫文字標籤
-                ctx.fillStyle = "#00FF00";
-                ctx.font = "bold 18px Arial";
-                ctx.fillText(
-                    `${prediction.class} (${Math.round(prediction.score * 100)}%)`,
-                    drawX, 
-                    drawY > 20 ? drawY - 10 : drawY + 20 // 避免文字跑出畫面頂部
-                );
-            });
+            // 繼續下一幀
+            requestAnimationFrame(loop);
         }
 
-        // 5. 處理視窗縮放
-        function resizeCanvas() {
-            canvas.width = window.innerWidth;
-            canvas.height = window.innerHeight;
-        }
-        window.addEventListener('resize', resizeCanvas);
+        // 5. 更新介面顯示
+        function updateUI(result) {
+            const label = result.label;
+            const probability = result.confidences[label] * 100;
 
-        // 顯示錯誤訊息的輔助函式
-        function showError(msg) {
-            errorBox.innerHTML = msg;
-            errorBox.style.display = 'block';
+            confBar.style.width = `${probability}%`;
+            confText.innerText = `信心度: ${Math.round(probability)}%`;
+
+            resultBadge.innerText = label;
+
+            if (label === 'Monkey') {
+                // 偵測到目標：藍色/青色風格
+                resultBadge.style.borderColor = "#00ffcc";
+                resultBadge.style.color = "#00ffcc";
+                resultBadge.style.boxShadow = "0 0 15px rgba(0, 255, 204, 0.5)";
+            } else {
+                // 偵測到其他人：紅色/警告風格
+                resultBadge.style.borderColor = "#ff3b30";
+                resultBadge.style.color = "#ff3b30";
+                resultBadge.style.boxShadow = "none";
+            }
         }
+
+        // 啟動程式
+        init();
+
     </script>
 </body>
 </html>
