@@ -3,342 +3,451 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>AI 視覺助手 (相機版)</title>
+    <title>AI 智能視覺辨識 (TensorFlow.js)</title>
+    
+    <!-- 引入 TensorFlow.js 核心與模型 -->
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.11.0/dist/tf.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.2/dist/coco-ssd.min.js"></script>
+
     <style>
-        /* --- 全局設定 --- */
+        /* --- 基礎設定 --- */
         body {
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-            background-color: #f0f2f5;
             margin: 0;
-            padding: 10px;
-            display: flex;
-            justify-content: center;
-            align-items: flex-start;
-            min-height: 100vh;
-            color: #333;
-        }
-
-        .container {
-            width: 100%;
-            max-width: 480px; /* 手機適配寬度 */
-            display: flex;
-            flex-direction: column;
-            gap: 15px;
-        }
-
-        /* 卡片通用樣式 */
-        .card {
-            background: white;
-            border-radius: 16px;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.08);
-            overflow: hidden;
-            display: flex;
-            flex-direction: column;
-        }
-
-        .card-header {
-            padding: 15px;
-            font-weight: 700;
-            font-size: 1.1rem;
-            border-bottom: 1px solid #eee;
-            display: flex;
-            align-items: center;
-            gap: 8px;
-        }
-        
-        .card-header.blue { background-color: #007aff; color: white; }
-        .card-header.dark { background-color: #333; color: white; }
-
-        /* --- 聊天區 --- */
-        .chat-area {
-            height: 200px;
-            padding: 15px;
-            overflow-y: auto;
-            background: #f9f9f9;
-            display: flex;
-            flex-direction: column;
-            gap: 8px;
-        }
-
-        .msg {
-            padding: 8px 12px;
-            border-radius: 18px;
-            font-size: 0.95rem;
-            max-width: 85%;
-            word-wrap: break-word;
-        }
-        .msg.bot { background: #e9e9eb; color: #000; align-self: flex-start; border-bottom-left-radius: 4px; }
-        .msg.user { background: #007aff; color: white; align-self: flex-end; border-bottom-right-radius: 4px; }
-
-        /* --- 相機介面區 --- */
-        .camera-viewport {
-            position: relative;
-            width: 100%;
-            height: 350px; /* 觀景窗高度 */
+            padding: 0;
             background-color: #000;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            overflow: hidden;
+            font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            overflow: hidden; /* 禁止捲動 */
+            width: 100vw;
+            height: 100vh;
+            color: #fff;
         }
 
-        /* 影片與 Canvas 重疊 */
-        video, canvas {
+        /* --- 視訊層 (底層) --- */
+        #video-container {
             position: absolute;
             top: 0;
             left: 0;
             width: 100%;
             height: 100%;
-            object-fit: cover; /* 填滿畫面 */
+            z-index: 1;
+            background: #000;
         }
 
-        /* 預設隱藏 Canvas (截圖用) */
-        #snapshot-canvas {
-            display: none;
-            cursor: crosshair;
+        video {
+            width: 100%;
+            height: 100%;
+            object-fit: cover; /* 讓畫面填滿螢幕 */
+            display: block;
         }
 
-        /* 相機控制列 */
-        .camera-controls {
-            padding: 15px;
+        /* --- 畫布層 (繪製框框用) --- */
+        canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 2;
+            pointer-events: none; /* 讓點擊穿透到下方 */
+        }
+
+        /* --- UI 介面層 (最上層) --- */
+        #ui-layer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 10;
+            pointer-events: none;
             display: flex;
-            justify-content: space-around;
-            background: #fff;
-        }
-
-        .btn {
-            padding: 10px 20px;
-            border-radius: 50px;
-            border: none;
-            font-weight: 600;
-            cursor: pointer;
-            transition: transform 0.1s;
-            display: flex;
-            align-items: center;
-            gap: 5px;
-        }
-        .btn:active { transform: scale(0.95); }
-        .btn-primary { background: #007aff; color: white; }
-        .btn-danger { background: #ff3b30; color: white; }
-        .btn-outline { background: transparent; border: 1px solid #ddd; color: #333; }
-
-        /* 結果顯示 */
-        .result-panel {
-            padding: 15px;
-            border-top: 1px solid #eee;
-            display: flex;
-            align-items: center;
+            flex-direction: column;
             justify-content: space-between;
-            background: #f8f9fa;
         }
-        .color-preview {
+
+        /* 頂部資訊列 */
+        .top-bar {
+            background: linear-gradient(180deg, rgba(0,0,0,0.8) 0%, rgba(0,0,0,0) 100%);
+            padding: 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            pointer-events: auto;
+        }
+
+        .status-badge {
+            background: rgba(0, 255, 204, 0.2);
+            border: 1px solid #00ffcc;
+            color: #00ffcc;
+            padding: 5px 12px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: bold;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+        }
+
+        .object-count {
+            font-size: 14px;
+            color: #fff;
+            text-shadow: 0 0 5px rgba(0,0,0,0.5);
+        }
+
+        /* 底部控制列 */
+        .bottom-controls {
+            padding: 30px;
+            display: flex;
+            justify-content: center;
+            gap: 20px;
+            pointer-events: auto;
+            background: linear-gradient(0deg, rgba(0,0,0,0.8) 0%, rgba(0,0,0,0) 100%);
+        }
+
+        /* 按鈕樣式 */
+        .btn {
+            background: rgba(255, 255, 255, 0.15);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            color: white;
+            padding: 12px 24px;
+            border-radius: 30px;
+            font-size: 14px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            outline: none;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        .btn:active {
+            transform: scale(0.95);
+            background: rgba(255, 255, 255, 0.3);
+        }
+
+        .btn-primary {
+            background: #007aff;
+            border-color: #007aff;
+        }
+
+        /* --- 載入畫面 --- */
+        #loading-screen {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: #000;
+            z-index: 20;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            transition: opacity 0.5s;
+        }
+
+        .loader {
             width: 50px;
             height: 50px;
-            border-radius: 12px;
-            border: 2px solid #ddd;
-            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
-        }
-        .color-info {
-            flex: 1;
-            margin-left: 15px;
-            font-family: monospace;
-            font-size: 1.2rem;
-            font-weight: bold;
+            border: 3px solid rgba(255,255,255,0.1);
+            border-top: 3px solid #00ffcc;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-bottom: 20px;
         }
 
-        /* 錯誤提示 */
-        #error-msg {
-            display: none;
-            color: white;
-            background: rgba(255, 59, 48, 0.9);
-            padding: 10px;
-            position: absolute;
-            z-index: 10;
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+
+        .loading-text {
+            color: #aaa;
+            font-size: 14px;
+            margin-top: 10px;
             text-align: center;
-            width: 80%;
-            border-radius: 8px;
+            line-height: 1.5;
+        }
+
+        #start-btn {
+            margin-top: 30px;
+            padding: 15px 40px;
+            font-size: 18px;
+            display: none; /* 載入完成才顯示 */
         }
 
     </style>
 </head>
 <body>
 
-<div class="container">
+    <!-- 視訊與畫布 -->
+    <div id="video-container">
+        <video id="webcam" playsinline muted autoplay></video>
+        <canvas id="canvas"></canvas>
+    </div>
 
-    <div class="card">
-        <div class="card-header blue">💬 AI 助手</div>
-        <div class="chat-area" id="chat-box">
-            <div class="msg bot">你好！請點擊下方的「開啟相機」按鈕。我可以幫你分析畫面中的顏色。</div>
+    <!-- UI 介面 -->
+    <div id="ui-layer">
+        <div class="top-bar">
+            <div class="status-badge" id="status-text">AI 系統待機</div>
+            <div class="object-count" id="fps-display">物件: 0</div>
+        </div>
+
+        <div class="bottom-controls" id="controls" style="display:none;">
+            <button class="btn" onclick="togglePause()" id="btn-pause">
+                <span>⏸</span> 暫停
+            </button>
+            <button class="btn" onclick="switchCamera()" id="btn-switch">
+                <span>📷</span> 翻轉鏡頭
+            </button>
         </div>
     </div>
 
-    <div class="card">
-        <div class="card-header dark">📷 視覺鏡頭</div>
-        
-        <div class="camera-viewport">
-            <div id="error-msg"></div>
-            <video id="video-feed" autoplay playsinline muted></video>
-            <canvas id="snapshot-canvas"></canvas>
-        </div>
-
-        <div class="result-panel">
-            <div class="color-preview" id="color-box" style="background-color: #fff;"></div>
-            <div class="color-info" id="color-text">等待截取...</div>
-        </div>
-
-        <div class="camera-controls">
-            <button class="btn btn-primary" id="btn-start" onclick="startCamera()">開啟相機</button>
-            <button class="btn btn-danger" id="btn-snap" onclick="takeSnapshot()" disabled>鎖定畫面</button>
-            <button class="btn btn-outline" id="btn-reset" onclick="resetCamera()" style="display:none;">重拍</button>
-        </div>
-        
-        <div style="padding: 10px; font-size: 12px; color: #888; text-align: center;">
-            操作：開啟相機 -> 鎖定畫面 -> 點擊畫面任意處取色
-        </div>
+    <!-- 載入畫面 -->
+    <div id="loading-screen">
+        <div class="loader" id="loader"></div>
+        <h2 style="font-weight: 300; letter-spacing: 2px;">AI VISION</h2>
+        <p class="loading-text" id="loading-msg">正在初始化類神經網路...<br>(初次載入約需 10-20 秒)</p>
+        <button class="btn btn-primary" id="start-btn" onclick="startApp()">啟動系統</button>
     </div>
 
-</div>
+    <script>
+        // --- 變數宣告 ---
+        const video = document.getElementById('webcam');
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        const loadingMsg = document.getElementById('loading-msg');
+        const loader = document.getElementById('loader');
+        const startBtn = document.getElementById('start-btn');
+        const statusText = document.getElementById('status-text');
+        const fpsDisplay = document.getElementById('fps-display');
+        const controls = document.getElementById('controls');
+        
+        let model = null;
+        let isDetecting = false;
+        let isPaused = false;
+        let currentStream = null;
+        let facingMode = 'environment'; // 預設後鏡頭
 
-<script>
-    // --- 變數宣告 ---
-    const video = document.getElementById('video-feed');
-    const canvas = document.getElementById('snapshot-canvas');
-    const ctx = canvas.getContext('2d');
-    const btnStart = document.getElementById('btn-start');
-    const btnSnap = document.getElementById('btn-snap');
-    const btnReset = document.getElementById('btn-reset');
-    const errorMsg = document.getElementById('error-msg');
-    const colorBox = document.getElementById('color-box');
-    const colorText = document.getElementById('color-text');
-    
-    let stream = null;
-    let isSnapshotMode = false;
+        // --- 1. 初始化模型 ---
+        async function loadModel() {
+            try {
+                // 載入 COCO-SSD 模型
+                // base: 'mobilenet_v2' 速度較快，適合手機
+                model = await cocoSsd.load({ base: 'mobilenet_v2' });
+                
+                // 模型載入完成
+                loader.style.display = 'none';
+                loadingMsg.innerHTML = "模型已就緒<br>請允許相機權限以開始";
+                startBtn.style.display = 'block';
+            } catch (err) {
+                console.error(err);
+                loadingMsg.innerHTML = "載入失敗<br>請檢查網路連線";
+                loadingMsg.style.color = "#ff3b30";
+            }
+        }
 
-    // --- 相機功能 ---
+        // --- 2. 啟動應用程式 ---
+        async function startApp() {
+            document.getElementById('loading-screen').style.opacity = '0';
+            setTimeout(() => {
+                document.getElementById('loading-screen').style.display = 'none';
+            }, 500);
 
-    // 1. 啟動相機
-    async function startCamera() {
-        try {
-            // 請求相機權限 (優先使用後置鏡頭 'environment')
-            const constraints = { 
-                video: { 
-                    facingMode: 'environment',
+            await setupCamera();
+            controls.style.display = 'flex';
+        }
+
+        // --- 3. 設定相機 ---
+        async function setupCamera() {
+            if (currentStream) {
+                currentStream.getTracks().forEach(track => track.stop());
+            }
+
+            const constraints = {
+                audio: false,
+                video: {
+                    facingMode: facingMode,
                     width: { ideal: 1280 },
                     height: { ideal: 720 }
-                } 
+                }
             };
-            
-            stream = await navigator.mediaDevices.getUserMedia(constraints);
-            video.srcObject = stream;
-            
-            // 更新 UI
-            btnStart.style.display = 'none';
-            btnSnap.disabled = false;
-            btnReset.style.display = 'none';
-            canvas.style.display = 'none';
-            video.style.display = 'block';
-            errorMsg.style.display = 'none';
-            
-            addBotMessage("相機已啟動！對準物體後，按下「鎖定畫面」來捕捉顏色。");
 
-        } catch (err) {
-            console.error("相機錯誤:", err);
-            showError("無法開啟相機。請確認：<br>1. 您已允許相機權限<br>2. 網站使用 HTTPS (或 Localhost)");
-            addBotMessage("噢不，我無法存取相機。可能是因為瀏覽器安全性限制。");
+            try {
+                currentStream = await navigator.mediaDevices.getUserMedia(constraints);
+                video.srcObject = currentStream;
+
+                return new Promise((resolve) => {
+                    video.onloadedmetadata = () => {
+                        resizeCanvas();
+                        if (!isDetecting) {
+                            detectFrame();
+                        }
+                        statusText.innerText = "偵測中";
+                        resolve();
+                    };
+                });
+            } catch (err) {
+                alert("無法開啟相機: " + err.message);
+            }
         }
-    }
 
-    // 2. 鎖定畫面 (截圖)
-    function takeSnapshot() {
-        if (!stream) return;
+        // --- 4. 調整 Canvas 大小 ---
+        // 這是確保繪圖位置正確的關鍵
+        function resizeCanvas() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+        }
 
-        // 設定 Canvas 大小與影片一致
-        canvas.width = video.videoWidth;
-        canvas.height = video.videoHeight;
+        window.addEventListener('resize', resizeCanvas);
 
-        // 將目前影片的一幀畫到 Canvas 上
-        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        // --- 5. 翻轉鏡頭 ---
+        async function switchCamera() {
+            facingMode = (facingMode === 'user') ? 'environment' : 'user';
+            statusText.innerText = "切換鏡頭...";
+            await setupCamera();
+            statusText.innerText = "偵測中";
+        }
 
-        // 切換顯示模式
-        video.style.display = 'none';
-        canvas.style.display = 'block';
-        
-        // 停止影片串流以節省資源 (可選，這裡選擇不完全關閉以便重拍，但暫停播放)
-        video.pause();
+        // --- 6. 暫停/繼續 ---
+        function togglePause() {
+            const btn = document.getElementById('btn-pause');
+            if (isPaused) {
+                isPaused = false;
+                video.play();
+                detectFrame();
+                btn.innerHTML = '<span>⏸</span> 暫停';
+                statusText.innerText = "偵測中";
+            } else {
+                isPaused = true;
+                video.pause();
+                btn.innerHTML = '<span>▶</span> 繼續';
+                statusText.innerText = "已暫停";
+                statusText.style.color = "yellow";
+                statusText.style.borderColor = "yellow";
+            }
+        }
 
-        // 更新 UI
-        btnSnap.style.display = 'none';
-        btnReset.style.display = 'flex';
-        isSnapshotMode = true;
+        // --- 7. 核心偵測迴圈 ---
+        async function detectFrame() {
+            if (isPaused) return;
 
-        addBotMessage("畫面已鎖定！現在請用手指點擊圖片中的任意位置來辨識顏色。");
-    }
+            isDetecting = true;
 
-    // 3. 重置 (回到即時預覽)
-    function resetCamera() {
-        video.play();
-        video.style.display = 'block';
-        canvas.style.display = 'none';
-        
-        btnSnap.style.display = 'flex';
-        btnReset.style.display = 'none';
-        isSnapshotMode = false;
-        
-        colorText.textContent = "等待截取...";
-        colorBox.style.backgroundColor = "#fff";
-    }
+            // 進行預測
+            const predictions = await model.detect(video);
 
-    // 4. 點擊圖片取色功能
-    canvas.addEventListener('click', function(event) {
-        if (!isSnapshotMode) return;
+            // 清除畫布
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-        // 計算點擊座標 (處理 CSS 縮放導致的座標偏移)
-        const rect = canvas.getBoundingClientRect();
-        const scaleX = canvas.width / rect.width;
-        const scaleY = canvas.height / rect.height;
+            // 繪製結果
+            drawPredictions(predictions);
 
-        const x = (event.clientX - rect.left) * scaleX;
-        const y = (event.clientY - rect.top) * scaleY;
+            // 更新 UI 計數
+            fpsDisplay.innerText = `物件數: ${predictions.length}`;
+            statusText.style.color = "#00ffcc";
+            statusText.style.borderColor = "#00ffcc";
 
-        // 讀取像素資料
-        const pixel = ctx.getImageData(x, y, 1, 1).data;
-        const hex = rgbToHex(pixel[0], pixel[1], pixel[2]);
-        const rgbStr = `RGB(${pixel[0]}, ${pixel[1]}, ${pixel[2]})`;
+            // 下一幀
+            requestAnimationFrame(detectFrame);
+        }
 
-        // 顯示結果
-        updateResult(hex, rgbStr);
-    });
+        // --- 8. 繪製精美的框框 ---
+        function drawPredictions(predictions) {
+            // 計算縮放比例 (因為 video 是 object-fit: cover，需要計算實際顯示區域)
+            const videoRatio = video.videoWidth / video.videoHeight;
+            const screenRatio = canvas.width / canvas.height;
+            
+            let renderWidth, renderHeight, offsetX, offsetY;
 
-    // --- 輔助功能 ---
+            if (screenRatio > videoRatio) {
+                // 螢幕比較寬，以寬度為基準
+                renderWidth = canvas.width;
+                renderHeight = canvas.width / videoRatio;
+                offsetX = 0;
+                offsetY = (canvas.height - renderHeight) / 2;
+            } else {
+                // 螢幕比較高，以高度為基準
+                renderHeight = canvas.height;
+                renderWidth = canvas.height * videoRatio;
+                offsetX = (canvas.width - renderWidth) / 2;
+                offsetY = 0;
+            }
 
-    function rgbToHex(r, g, b) {
-        return "#" + ((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1).toUpperCase();
-    }
+            const scaleX = renderWidth / video.videoWidth;
+            const scaleY = renderHeight / video.videoHeight;
 
-    function updateResult(hex, rgb) {
-        colorBox.style.backgroundColor = hex;
-        colorText.innerHTML = `${hex}<br><span style="font-size:12px; color:#666">${rgb}</span>`;
-        
-        // 讓機器人說話
-        addBotMessage(`分析完成！這個顏色是 ${hex}。`);
-    }
+            predictions.forEach(prediction => {
+                const [x, y, width, height] = prediction.bbox;
+                const className = prediction.class;
+                const score = Math.round(prediction.score * 100);
 
-    function showError(msg) {
-        errorMsg.innerHTML = msg;
-        errorMsg.style.display = 'block';
-    }
+                // 轉換座標到 Canvas
+                const drawX = x * scaleX + offsetX;
+                const drawY = y * scaleY + offsetY;
+                const drawW = width * scaleX;
+                const drawH = height * scaleY;
 
-    // --- 簡單的聊天功能 ---
-    function addBotMessage(text) {
-        const chatBox = document.getElementById('chat-box');
-        const div = document.createElement('div');
-        div.className = 'msg bot';
-        div.innerHTML = text;
-        chatBox.appendChild(div);
-        chatBox.scrollTop = chatBox.scrollHeight;
-    }
+                // 設定顏色 (依據不同物件可設定不同色，這裡統用科幻青色)
+                const color = '#00ffcc';
 
-</script>
+                // 畫框框 (四個角角風格)
+                drawFancyBox(ctx, drawX, drawY, drawW, drawH, color);
 
+                // 畫文字標籤背景
+                ctx.fillStyle = color;
+                ctx.font = 'bold 16px "Segoe UI", sans-serif';
+                const text = `${className} ${score}%`;
+                const textWidth = ctx.measureText(text).width;
+                
+                ctx.fillRect(drawX, drawY - 25, textWidth + 20, 25);
+
+                // 畫文字
+                ctx.fillStyle = '#000';
+                ctx.fillText(text, drawX + 10, drawY - 7);
+            });
+        }
+
+        // 輔助函式：畫出只有四個角的科幻框框
+        function drawFancyBox(ctx, x, y, w, h, color) {
+            ctx.strokeStyle = color;
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            
+            const lineLen = Math.min(w, h) * 0.2; // 角落線條長度
+
+            // 左上
+            ctx.moveTo(x, y + lineLen);
+            ctx.lineTo(x, y);
+            ctx.lineTo(x + lineLen, y);
+
+            // 右上
+            ctx.moveTo(x + w - lineLen, y);
+            ctx.lineTo(x + w, y);
+            ctx.lineTo(x + w, y + lineLen);
+
+            // 右下
+            ctx.moveTo(x + w, y + h - lineLen);
+            ctx.lineTo(x + w, y + h);
+            ctx.lineTo(x + w - lineLen, y + h);
+
+            // 左下
+            ctx.moveTo(x + lineLen, y + h);
+            ctx.lineTo(x, y + h);
+            ctx.lineTo(x, y + h - lineLen);
+
+            ctx.stroke();
+
+            // 加上半透明填充增加識別度
+            ctx.fillStyle = color.replace(')', ', 0.1)').replace('rgb', 'rgba'); // 簡單的 hack
+            if(color.startsWith('#')) {
+                // 如果是 hex，使用固定透明度
+                ctx.fillStyle = "rgba(0, 255, 204, 0.1)"; 
+            }
+            ctx.fillRect(x, y, w, h);
+        }
+
+        // 開始載入程序
+        window.onload = loadModel;
+
+    </script>
 </body>
 </html>
