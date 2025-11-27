@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>我的離線 AI 助手 (含色彩辨識)</title>
+    <style>
+        /* 頁面基本樣式 */
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f0f2f5;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh; /* 使用 min-height 以適應內容增加 */
+            margin: 0;
+            padding: 20px;
+            box-sizing: border-box;
+        }
+
+        /* 主容器 */
+        .main-container {
+            width: 90%;
+            max-width: 450px;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        /* 通用卡片樣式 */
+        .card {
+            background: white;
+            border-radius: 15px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+
+        /* --- 聊天區塊樣式 --- */
+        .chat-section {
+            height: 50vh; /* 調整高度 */
+            display: flex;
+            flex-direction: column;
+        }
+
+        .header {
+            background-color: #4a90e2;
+            color: white;
+            padding: 15px;
+            text-align: center;
+            font-weight: bold;
+        }
+
+        #chat-box {
+            flex: 1;
+            padding: 15px;
+            overflow-y: auto;
+            background-color: #fff;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .message {
+            max-width: 80%;
+            padding: 10px 15px;
+            border-radius: 20px;
+            font-size: 14px;
+            line-height: 1.4;
+        }
+
+        .user-msg { background-color: #0084ff; color: white; align-self: flex-end; border-bottom-right-radius: 5px; }
+        .bot-msg { background-color: #e4e6eb; color: black; align-self: flex-start; border-bottom-left-radius: 5px; }
+
+        .input-area {
+            display: flex;
+            padding: 10px;
+            border-top: 1px solid #ddd;
+            background: #f9f9f9;
+        }
+        .input-area input { flex: 1; padding: 10px; border: 1px solid #ddd; border-radius: 20px; outline: none; }
+        .input-area button { margin-left: 10px; padding: 10px 20px; background-color: #4a90e2; color: white; border: none; border-radius: 20px; cursor: pointer; font-weight: bold; }
+        .input-area button:hover { background-color: #357abd; }
+
+        /* --- 新增：色彩辨識工具區樣式 --- */
+        .tool-section {
+            padding: 15px;
+        }
+
+        .tool-header {
+            font-weight: bold;
+            color: #333;
+            margin-bottom: 10px;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        /* 隱藏實際的檔案上傳 input */
+        #image-upload {
+            display: none;
+        }
+
+        /* 自定義上傳按鈕 */
+        .upload-btn {
+            display: inline-block;
+            padding: 8px 15px;
+            background-color: #6c757d;
+            color: white;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+            text-align: center;
+            margin-bottom: 10px;
+        }
+        .upload-btn:hover { background-color: #5a6268; }
+
+        /* 圖片預覽區 */
+        .image-preview-container {
+            position: relative;
+            min-height: 100px;
+            background-color: #eee;
+            border-radius: 10px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            border: 2px dashed #ccc;
+            overflow: hidden;
+            cursor: crosshair; /* 滑鼠變成十字準心 */
+        }
+
+        #preview-image {
+            max-width: 100%;
+            max-height: 300px;
+            display: none; /* 預設隱藏 */
+        }
+
+        /* 隱藏的 canvas */
+        #hidden-canvas {
+            display: none;
+        }
+
+        /* 結果顯示區 */
+        .color-result {
+            margin-top: 15px;
+            padding: 10px;
+            background: #f8f9fa;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            display: none; /* 預設隱藏 */
+        }
+
+        #color-box {
+            width: 40px;
+            height: 40px;
+            border-radius:
